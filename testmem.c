@@ -1,5 +1,13 @@
 #include <stdio.h>
+#include <unistd.h> // this is to use sysconf(_SC_PAGESIZE) and this equals
 #include "mem.h"
+
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+// #include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
 
 #define REGION_SIZE (10*1024)
 

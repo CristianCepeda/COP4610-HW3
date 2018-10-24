@@ -12,16 +12,6 @@ void* myalloc(int size)
   return p;
 }
 
-int Mem_Init(int size, int policy){
-
-  return 0;
-}
-
-void* Mem_Alloc(int size){
-
-
-}
-
 void myfree(void* p)
 {
   printf("free memory at p=%p...", p);

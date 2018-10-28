@@ -8,43 +8,37 @@
 #include "mem.h"
 
 typedef struct our_block {
-  size_t sizeB;
-  struct our_block* prev;
-  struct our_block* next;
-}head;
+  size_t size;
+  struct our_block* nextPtr; // Use this pointer to advance in the linked list
+  int isFree; // This will be a boolean variable to check if the block is free or not. 
+              // You may have freed this block and its in the middle of or linked list
+              // so we could use this space later to store something else
+} block;
 
-int Mem_Init(int size, int policy){
-  // void *mmap(void *addr, size_t length, int prot, int flags,
-  //                 int fd, off_t offset);
-
-  void *addr;
-  size_t length = size;
+int Mem_Init(int size, int policy) {
+  // void *mmap(void *addr, size_t length, int prot, int flags, int fd, off_t offset);
+  
   int pa_size = getpagesize();
   int nextUp_size = (int) ceil((double) size / pa_size) * pa_size;
-
-  // open the /dev/zero device
-  int fd = open("/dev/zero", O_RDWR);
-
   off_t offset;
 
+  // -----------------------------------------------------------------------------
+  // ---------------------------- CODE GIVEN TO US -------------------------------
+  // open the /dev/zero device
+  int fd = open("/dev/zero", O_RDWR);
   // size (in bytes) must be divisible by page size
-  addr = mmap(NULL, nextUp_size, PROT_WRITE, MAP_PRIVATE, fd, 0);
-
-  if (addr == MAP_FAILED) {
+  void *ptr = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
+  if (ptr == MAP_FAILED) {
     perror("mmap");
     return NULL;
   }
-
   // close the device (don't worry, mapping should be unaffected)
   close(fd);
   return 0;
 }
 
 void* Mem_Alloc(int size){
-  
   if(size == 0){ return NULL; }
-
-  
 }
 
 int Mem_Free(void* ptr){

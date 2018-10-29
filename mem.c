@@ -199,8 +199,6 @@ float Mem_GetFragmentation(){
 	double maxFree = 0.0;
 	double totalFree = 0.0;
 	
-	unsigned int notFoundMem = 1;
-	
 	while (current != NULL){
 		if(current->size > maxFree){ maxFree = current->size; }
 

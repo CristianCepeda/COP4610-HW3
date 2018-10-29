@@ -1,354 +1,254 @@
+#include "mem.h"
+#include <stdlib.h>
+#include <stdio.h>
+#include <unistd.h>
 #include <sys/mman.h>
+#include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <math.h>
-#include "mem.h"
+#include <stdint.h>
 
-#define TRUE 1
-#define FALSE 0
-#define PASS 0
-#define FAIL -1
+#define E_NO_SPACE            (1)
+#define E_CORRUPT_FREESPACE   (2)
+#define E_PADDING_OVERWRITTEN (3)
+#define E_BAD_ARGS            (4)
+#define E_BAD_POINTER         (5)
 
-void *map;
-void *ptr;
-int mem_size;
-int global_policy;
-int not_initalized = TRUE;
-int struc_size = 0;
+struct mem_node* consolidateBefore(struct mem_node *newNode);
+struct mem_node* consolidateAfter(struct mem_node *newNode);
 
-struct our_block {
-    int start;
-    int end;
+struct mem_node {
+	struct mem_node *next;
+	struct mem_node *prev;
+	int	  size;
 };
 
-typedef struct our_block my_block;
+struct mem_node *freeHead = NULL;
+int freeSize = 0;
+int m_error;
 
-int block_size = sizeof(my_block);
-
-int position(int index){
-  index = map + (mem_size - index*block_size);
-  return index;
-}
-
-struct our_block structure (int index){
-
-  struct our_block *block;
-  block = position(index);
-
-  return *block;
-}
-
-int start_valObj(int index){
- struct our_block X;
- X.start = position(index);
-
- return X.start;
-}
-
-int end_valObj(int index){
- struct our_block X;
- X.end = position(index);
-
- return X.end;
-}
-
-//-----------------------------------------------
-
-void objInsert(my_block obj){
-	int position = objPosition(obj);
-
-	for (int i = struc_size; i >= position; --i)
+int Mem_Init(int sizeOfRegion, int debug)
+{
+	if(sizeOfRegion > 0 && freeHead == NULL )
 	{
-		my_block X, I;
-		X.start = start_valObj(i);
-		X.end = end_valObj(i);
-		I = structure((i+1));
-	}
+		int pageSize = getpagesize();
+		if(sizeOfRegion % getpagesize() != 0)
+			sizeOfRegion += getpagesize() - (sizeOfRegion % getpagesize());
+		
 
-	structure(position) = obj;
-	struc_size++;
-	start_valObj(struc_size) = start_valObj(struc_size) - block_size;
-}
+		int fd = open("/dev/zero", O_RDWR);
 
+		void* ptr = mmap(NULL, sizeOfRegion, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
+		if (ptr == MAP_FAILED) { perror("mmap"); exit(1); }
+		close(fd);
 
-void objRemove(my_block obj){
-
-	int position = objPosition(obj) - 1;
-
-	for (int i = position+1; i <= struc_size; ++i)
-	{
-		my_block X;
-		X.start = start_valObj(i);
-		X.end = end_valObj(i);
-		structure((i-1)) = X;
-	}
-	--struc_size;
-	start_valObj(struc_size) = start_valObj(struc_size) + block_size;
-}
-
-
-int objPosition(my_block obj){
-
-	if (struc_size == 0){ return 1; }
-
-	if (obj.start >= end_valObj(struc_size) || obj.start < 0 || obj.end < 0)
-	{ return -1; }
-
-	if (obj.end < start_valObj(1))
-	{ return 1; }
-
-	int x = 1, s_size = struc_size, tmp;
-	while ((s_size - x) > 1)
-	{
-		tmp = (x + s_size)/2;
-		if (obj.start < start_valObj(tmp))
+		//get 8 byte alligned
+		if((uintptr_t)ptr  % 8 != 0)
 		{
-			s_size = tmp;
+			ptr += 8 - ((uintptr_t)ptr % 8);
+			sizeOfRegion -= 8 - ((uintptr_t)ptr % 8);
 		}
-		else
-		{
-			x = tmp;
-		}
-	}
+		freeHead = ptr;
+		freeHead->next = NULL;
+		freeHead->prev = NULL;
+		freeHead->size = sizeOfRegion;
 
-	return s_size;
+		freeSize = sizeOfRegion;
+		return 0;
+	}else {
+		m_error = E_BAD_ARGS;
+		return -1;
+	}
 }
 
-my_block findInObj(int offset){
+void *Mem_Alloc(int size)
+{
+	struct mem_node *biggestNode  = freeHead;
+	struct mem_node *currentNode  = freeHead;
 
-	if (start_valObj(1) <= offset && offset < end_valObj(1))
+	if(size % 8 != 0)
+		size += 8 - (size % 8);
+
+	if(freeHead == NULL)
 	{
-		return structure(1);
+		//our list is empty
+		m_error = E_NO_SPACE;
+		return NULL;
 	}
 
-	int x = 1, s_size = struc_size, tmp;
-	while ((s_size - x) > 1)
+	//find the biggest free chunk (worst fit)
+	do{
+		if(currentNode->size > biggestNode->size)
+			biggestNode = currentNode;
+
+		currentNode = currentNode->next;
+	}while(currentNode != NULL);
+
+	struct mem_node* biggestNodePrev = biggestNode->prev;
+	struct mem_node* biggestNodeNext = biggestNode->next;
+	int biggestNodeSize = biggestNode->size;
+
+	//check for freespace
+	if(biggestNode->size < size + 24)
 	{
-		tmp = (x + s_size)/2;
-		if (start_valObj(tmp) <= offset && offset < end_valObj(tmp))
+		m_error = E_NO_SPACE;
+		return NULL;
+	}else if(biggestNode->size == size + 24) {
+		if(biggestNode != freeHead)
 		{
-			return structure(tmp);
+			biggestNode->prev->next = biggestNodeNext;
 		}
-		else if (offset < start_valObj(tmp))
+		if(biggestNodeNext != NULL)
 		{
-			s_size = tmp;
+			biggestNode->next->prev = biggestNodePrev;
 		}
-		else
+		if(biggestNode == freeHead)
 		{
-			x = tmp;
+			freeHead = biggestNodeNext;
 		}
+
+		uintptr_t *new_size = (uintptr_t*)biggestNode;
+		*new_size = size;
+		return (void*)new_size + 24;
+	}else {
+		void *returnVal;
+		uintptr_t *new_size = (uintptr_t*)biggestNode;
+		returnVal =  (void*)new_size + 24;
+
+		struct mem_node* newNode = returnVal + size;
+		
+		newNode->prev = biggestNodePrev;
+		newNode->next = biggestNodeNext;
+		newNode->size = biggestNodeSize - (size + 24);
+
+		if(biggestNode != freeHead)
+		{
+			biggestNode->prev->next = newNode;
+		}
+		if(biggestNode->next != NULL)
+		{
+			biggestNode->next->prev = newNode;
+		}
+		if(biggestNode == freeHead)
+		{
+			freeHead = newNode;
+		}
+
+		*new_size = size;
+		return returnVal;
 	}
 
-	my_block obj;
-	obj.start = -1;
-	obj.end = -1;
 
-	return obj;
 }
 
+int Mem_Free(void *ptr)
+{
+	if(ptr == NULL)
+		return 0;
+	
+	int *size = ptr - 24;
 
+	struct mem_node *beforeNode = freeHead;
+	struct mem_node *newNode = (struct mem_node*)size;
 
-//-----------------------------------------------
-
-
-int Mem_Init(int size, int policy) {
-
-  	int fd;
-	if (not_initalized)
+	if(beforeNode == NULL)
 	{
-		int pa_size = getpagesize();
-		int roundUP_size = size + pa_size - size%pa_size;
-
-		/* Adjusting provided size to next multiple of pagesize */
-		mem_size = (size%pa_size) ? roundUP_size : size;
-
-		/* Creates the memory file with read, write and execute permissions
-		 * set for the current user */
-		fd = open("/dev/zero", O_RDWR);
-		if (fd == -1){ return FAIL; }
-
-		map = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
-
-		if (map == MAP_FAILED){ return FAIL; }
-
-		not_initalized = FALSE;
-		global_policy = policy;
-
-		my_block obj;
-		obj.start =  mem_size; /* insertion will adjust it */
-		obj.end = mem_size;
-		objInsert(obj);
-	}
-	else
+		//Freed chunk size of our entire init size
+		
+		newNode->size = *size + 24;
+		newNode->prev = NULL;
+		newNode->next = NULL;
+		freeHead = newNode;
+		return 0;
+	}else if((uintptr_t*)size < (uintptr_t*)freeHead)
 	{
-		return FAIL;
+		//Freed memory at beginning of list
+
+		newNode->size = *size + 24;
+		newNode->prev = NULL;
+		newNode->next = freeHead;
+		freeHead->prev = newNode;
+		freeHead = newNode;
+	}else {
+
+		while((void*)beforeNode->next < (void*)size && beforeNode->next != NULL)
+		{
+			beforeNode = beforeNode->next;
+		}
+
+		if (beforeNode == freeHead)
+		{
+			newNode->size = *size + 24;
+			newNode->prev = beforeNode;
+			newNode->next = beforeNode->next;
+			newNode->next->prev = newNode;
+			beforeNode->next = newNode;
+		}
+		else if(beforeNode->next == NULL)
+		{
+			newNode->size = *size + 24;
+			newNode->prev = beforeNode;
+			newNode->prev->next = newNode;
+			newNode->next = beforeNode->next;
+			beforeNode->next = newNode;
+		}
+		else if(beforeNode != freeHead)
+		{
+			newNode->size = *size + 24;
+			newNode->prev = beforeNode;
+			newNode->next = beforeNode->next;
+			beforeNode->next = newNode;
+			newNode->next->prev = newNode;
+		}
 	}
 
-	close(fd);
-	return PASS;
-}
-
-void* Mem_Alloc(int size){
-
-  void *ptr = map;
-  my_block obj;
-  obj.start = 0;
-  if (global_policy == MEM_POLICY_FIRSTFIT)
-  {
-    if (struc_size == 1 && size <= (start_valObj(1) - block_size))
-    {
-      obj.end = obj.start + size;
-
-      objInsert(obj);
-      return ptr + 0;
-    }
-    else if (struc_size > 1)
-    {
-      if (size <= start_valObj(1))
-      {
-        obj.end = obj.start + size;
-
-        objInsert(obj);
-        return ptr + 0;
-      }
-      for (int i = 1; i < struc_size; ++i)
-      {
-        if (i == (struc_size - 1))
-        {
-          if(size <= (start_valObj((i+1)) - end_valObj(i) - block_size))
-          {
-            obj.start = end_valObj(i);
-            obj.end = obj.start + size;
-
-            objInsert(obj);
-            return ptr + end_valObj(i);
-          }
-        }
-        else if(size <= (start_valObj((i+1)) - end_valObj(i)))
-        {
-          obj.start = end_valObj(i);
-          obj.end = obj.start + size;
-
-          objInsert(obj);
-          return ptr + end_valObj(i);
-        }
-      }
-    }
-    return NULL;
-  }
-  else if(global_policy == MEM_POLICY_BESTFIT)
-  {
-    int i, best_fit = mem_size, best_position = -1;
-    if (size <= (start_valObj(1)))
-    {
-      best_fit = start(1);
-      best_position = 0;
-
-    }
-    for (i = 1; i < struc_size; ++i)
-    {
-      if (i == (struc_size - 1))
-      {
-        if(size <= (start_valObj((i+1)) - start_valObj(i) - block_size)
-            && (start_valObj((i+1)) - start_valObj(i)) < best_fit)
-        {
-          best_fit = (start_valObj((i+1)) - start_valObj(i));
-          best_position = i;
-        }
-      }
-      else
-      {
-        if(size <= (start_valObj((i+1)) - start_valObj(i)) && (start_valObj((i+1)) - start_valObj(i)) < best_fit)
-        {
-          best_fit = (start_valObj((i+1)) - end_valObj(i));
-          best_position = i;
-        }
-      }
-    }
-    if (best_position == 0)
-    {
-      obj.end = obj.start + size;
-      objInsert(obj);
-      return ptr + 0;
-    }
-    else if (best_position != -1)
-    {
-      obj.start = end_valObj(best_position);
-      obj.end = obj.start + size;
-
-      objInsert(obj);
-      return ptr + end_valObj(best_position);
-    }
-    return NULL;
-  }
-  else if (global_policy == MEM_POLICY_WORSTFIT)
-  {
-    int i, worst_fit = 0, worst_position = -1;
-    if (size <= (start_valObj(1)))
-    {
-      worst_fit = start_valObj(1);
-      worst_position = 0;
-
-    }
-    for (i = 1; i < struc_size; ++i)
-    {
-      if (i == (struc_size - 1))
-      {
-        if(size <= (start_valObj((i+1)) - end_valObj(i) - block_size)
-            && (start_valObj((i+1)) - end_valObj(i)) > worst_fit)
-        {
-          worst_fit = (start_valObj((i+1)) - end_valObj(i));
-          worst_position = i;
-        }
-      }
-      else
-      {
-        if(size <= (start_valObj((i+1)) - end_valObj(i)) && (start_valObj((i+1)) - end_valObj(i)) > worst_fit)
-        {
-          worst_fit = (start_valObj((i+1)) - end_valObj(i));
-          worst_position = i;
-        }
-      }
-    }
-    if (worst_position == 0)
-    {
-      obj.end = obj.start + size;
-      objInsert(obj);
-
-      return ptr + 0;
-    }
-    else if (worst_position != -1)
-    {
-      obj.start = end_valObj(worst_position);
-      obj.end = obj.start + size;
-
-      objInsert(obj);
-      return ptr + end_valObj(worst_position);
-    }
-    return NULL;
-  }
-  else
-  {
-    return (void*) FAIL;
-  }
-  return NULL;
-}
-
-int Mem_Free(void* ptr){
-
-}
-
-int Mem_IsValid(void* ptr){
-
-}
-
-int Mem_GetSize(void* ptr){
-
+	consolidateAfter(consolidateBefore(newNode));
+	return 0;
 }
 
 float Mem_GetFragmentation(){
+  return 1.0;
+}
 
+
+struct mem_node* consolidateBefore(struct mem_node *newNode)
+{
+	struct mem_node *prevNode = newNode->prev;
+	if(prevNode != NULL)
+	{
+		if(((void*)prevNode + prevNode->size) == newNode)
+		{
+			prevNode->next = newNode->next;
+			prevNode->size += newNode->size;
+			prevNode->next->prev = prevNode;
+			return prevNode;
+		}
+	}
+	return newNode;
+}
+
+struct mem_node* consolidateAfter(struct mem_node *newNode)
+{
+	struct mem_node *nextNode = newNode->next;
+	if(nextNode != NULL)
+	{
+		if(((void*)newNode + newNode->size) == nextNode)
+		{
+			newNode->next = nextNode->next;
+			if(newNode->next != NULL)
+				newNode->next->prev = newNode;
+
+			newNode->size += nextNode->size;
+		}
+	}
+	return newNode;
+}
+
+void Mem_Dump(){
+	struct mem_node *nextNode = freeHead;
+	while(nextNode != NULL)
+	{
+		printf("Node at: %p\n\tPrevious: %p\n\tNext: %p\n\tSize: %d\n", nextNode, nextNode->prev, nextNode->next, nextNode->size);
+		nextNode = nextNode->next;
+	}
 }

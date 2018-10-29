@@ -8,11 +8,7 @@
 #include <fcntl.h>
 #include <stdint.h>
 
-#define E_NO_SPACE            (1)
-#define E_CORRUPT_FREESPACE   (2)
-#define E_PADDING_OVERWRITTEN (3)
-#define E_BAD_ARGS            (4)
-#define E_BAD_POINTER         (5)
+#define ERROR -1;
 
 struct our_block* addNode_prev(struct our_block *newNode);
 struct our_block* addNode_next(struct our_block *newNode);
@@ -25,7 +21,6 @@ struct our_block {
 
 struct our_block *emptyNode = NULL;
 int freeSize = 0;
-int m_error;
 int global_policy;
 
 int Mem_Init(int size, int policy)
@@ -58,8 +53,7 @@ int Mem_Init(int size, int policy)
 		freeSize = size;
 		return 0;
 	}else {
-		m_error = E_BAD_ARGS;
-		return -1;
+		return ERROR;
 	}
 
 	
@@ -67,73 +61,71 @@ int Mem_Init(int size, int policy)
 
 void *Mem_Alloc(int size)
 {
-	struct our_block *biggestNode  = emptyNode;
+	struct our_block *maxNode  = emptyNode;
 	struct our_block *currentNode  = emptyNode;
+	int sizeN;
 
 	if(size % 8 != 0)
 		size += 8 - (size % 8);
 
 	if(emptyNode == NULL)
 	{
-		//our list is empty
-		m_error = E_NO_SPACE;
-		return NULL;
+		return NULL;	//empty list
 	}
 
 	//find the biggest free chunk (worst fit)
 	do{
-		if(currentNode->size > biggestNode->size)
-			biggestNode = currentNode;
+		if(currentNode->size > maxNode->size)
+			maxNode = currentNode;
 
 		currentNode = currentNode->next;
-	}while(currentNode != NULL);
+	}while(global_policy == MEM_POLICY_WORSTFIT);
 
-	struct our_block* biggestNodePrev = biggestNode->prev;
-	struct our_block* biggestNodeNext = biggestNode->next;
-	int biggestNodeSize = biggestNode->size;
+	struct our_block* maxNodePrev = maxNode->prev;
+	struct our_block* maxNodeNext = maxNode->next;
+	int maxNodeSize = maxNode->size;
 
 	//check for freespace
-	if(biggestNode->size < size + 24)
+	if(maxNode->size < size + 24)
 	{
-		m_error = E_NO_SPACE;
 		return NULL;
-	}else if(biggestNode->size == size + 24) {
-		if(biggestNode != emptyNode)
+	}else if(maxNode->size == size + 24) {
+		if(maxNode != emptyNode)
 		{
-			biggestNode->prev->next = biggestNodeNext;
+			maxNode->prev->next = maxNodeNext;
 		}
-		if(biggestNodeNext != NULL)
+		if(maxNodeNext != NULL)
 		{
-			biggestNode->next->prev = biggestNodePrev;
+			maxNode->next->prev = maxNodePrev;
 		}
-		if(biggestNode == emptyNode)
+		if(maxNode == emptyNode)
 		{
-			emptyNode = biggestNodeNext;
+			emptyNode = maxNodeNext;
 		}
 
-		uintptr_t *new_size = (uintptr_t*)biggestNode;
+		uintptr_t *new_size = (uintptr_t*)maxNode;
 		*new_size = size;
 		return (void*)new_size + 24;
 	}else {
 		void *returnVal;
-		uintptr_t *new_size = (uintptr_t*)biggestNode;
+		uintptr_t *new_size = (uintptr_t*)maxNode;
 		returnVal =  (void*)new_size + 24;
 
 		struct our_block* newNode = returnVal + size;
 		
-		newNode->prev = biggestNodePrev;
-		newNode->next = biggestNodeNext;
-		newNode->size = biggestNodeSize - (size + 24);
+		newNode->prev = maxNodePrev;
+		newNode->next = maxNodeNext;
+		newNode->size = maxNodeSize - (size + 24);
 
-		if(biggestNode != emptyNode)
+		if(maxNode != emptyNode)
 		{
-			biggestNode->prev->next = newNode;
+			maxNode->prev->next = newNode;
 		}
-		if(biggestNode->next != NULL)
+		if(maxNode->next != NULL)
 		{
-			biggestNode->next->prev = newNode;
+			maxNode->next->prev = newNode;
 		}
-		if(biggestNode == emptyNode)
+		if(maxNode == emptyNode)
 		{
 			emptyNode = newNode;
 		}
@@ -146,26 +138,16 @@ void *Mem_Alloc(int size)
 
 int Mem_Free(void *ptr)
 {
-	if(ptr == NULL) { return -1; }
-	
+	if(ptr == NULL) { return ERROR; }
+
 	int *size = ptr - 24;
 
 	struct our_block *beforeNode = emptyNode;
 	struct our_block *newNode = (struct our_block*)size;
 
-	if(beforeNode == NULL)
-	{
-		//Freed chunk size of our entire init size
-		
-		newNode->size = *size + 24;
-		newNode->prev = NULL;
-		newNode->next = NULL;
-		emptyNode = newNode;
-		return 0;
-	}else if((uintptr_t*)size < (uintptr_t*)emptyNode)
+	if((uintptr_t*)size < (uintptr_t*)emptyNode)
 	{
 		//Freed memory at beginning of list
-
 		newNode->size = *size + 24;
 		newNode->prev = NULL;
 		newNode->next = emptyNode;
@@ -178,21 +160,16 @@ int Mem_Free(void *ptr)
 			beforeNode = beforeNode->next;
 		}
 
+
 		if (beforeNode == emptyNode)
 		{
+			//printf("BeforeNode: %p EmptyNode: %p\n", (void*)beforeNode, (void*)emptyNode);
 			newNode->size = *size + 24;
 			newNode->prev = beforeNode;
 			newNode->next = beforeNode->next;
 			newNode->next->prev = newNode;
 			beforeNode->next = newNode;
-		}
-		else if(beforeNode->next == NULL)
-		{
-			newNode->size = *size + 24;
-			newNode->prev = beforeNode;
-			newNode->prev->next = newNode;
-			newNode->next = beforeNode->next;
-			beforeNode->next = newNode;
+			return ERROR;
 		}
 		else if(beforeNode != emptyNode)
 		{
@@ -213,7 +190,7 @@ int Mem_IsValid(void* ptr){
 }
 
 int Mem_GetSize(void* ptr){
-	return -1;
+	return ERROR;
 }
 
 float Mem_GetFragmentation(){

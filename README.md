@@ -10,8 +10,10 @@
 
 Option 1
 ```
-> gcc pthreads-1.c -o pthreads-1
-> gcc pthreads-2.c -o pthreads-2
+> gcc -c -fpic mem.c
+> gcc -shared -o libmem.so mem.o
+> gcc testmem.c -lmem -L. -o myprogram
+> setenv LD_LIBRARY_PATH ${LD_LIBRARY_PATH}:.
 ```
 Option 2
 ```
@@ -21,10 +23,5 @@ Option 2
 
 Step 1
 ```
-./pthreads-1 5
-```
-
-Step 2
-```
-./pthreads-2 5
+./myprogram
 ```

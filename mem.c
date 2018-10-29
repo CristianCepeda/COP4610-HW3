@@ -194,7 +194,21 @@ int Mem_GetSize(void* ptr){
 }
 
 float Mem_GetFragmentation(){
-	return 1.0;
+
+	struct our_block *current = emptyNode;
+	double maxFree = 0.0;
+	double totalFree = 0.0;
+	
+	unsigned int notFoundMem = 1;
+	
+	while (current != NULL){
+		if(current->size > maxFree){ maxFree = current->size; }
+
+		totalFree += current->size;
+		current = current->next;
+	}
+
+	return (maxFree)/(totalFree);
 }
 
 

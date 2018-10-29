@@ -19,163 +19,134 @@ int global_policy;
 int not_initalized = TRUE;
 int struc_size = 0;
 
-//DS_UNIT
-int block_size = sizeof(our_block);
+struct our_block {
+    int start;
+    int end;
+};
 
-//POS(a)
+typedef struct our_block my_block;
+
+int block_size = sizeof(my_block);
+
 int position(int index){
   index = map + (mem_size - index*block_size);
   return index;
 }
 
-
-//DS(a)
 struct our_block structure (int index){
 
   struct our_block *block;
-  block = position(index);  
+  block = position(index);
 
-  return block;
+  return *block;
 }
-
 
 int start_valObj(int index){
- struct our_block *block;
- block.start = position(index);  
+ struct our_block X;
+ X.start = position(index);
 
- return block.start;
+ return X.start;
 }
-
 
 int end_valObj(int index){
- struct our_block *block;
- block.end = position(index);  
+ struct our_block X;
+ X.end = position(index);
 
- return block.end;
+ return X.end;
 }
-
-typedef struct our_block {
-    int start;
-    int end;
-} 
-
 
 //-----------------------------------------------
 
-void objInsert(our_block obj)
-{	
+void objInsert(my_block obj){
 	int position = objPosition(obj);
-	
+
 	for (int i = struc_size; i >= position; --i)
 	{
-		our_block X;
+		my_block X, I;
 		X.start = start_valObj(i);
 		X.end = end_valObj(i);
-		structure((i+1)) = X;
+		I = structure((i+1));
 	}
+
 	structure(position) = obj;
 	struc_size++;
 	start_valObj(struc_size) = start_valObj(struc_size) - block_size;
 }
 
 
-void objRemove(our_block obj)
-{
-	
+void objRemove(my_block obj){
+
 	int position = objPosition(obj) - 1;
-	
+
 	for (int i = position+1; i <= struc_size; ++i)
 	{
-		our_block X;
+		my_block X;
 		X.start = start_valObj(i);
 		X.end = end_valObj(i);
 		structure((i-1)) = X;
 	}
 	--struc_size;
-	start_valObj(struc_size) = start_valObj(struc_size) + block_size;	
+	start_valObj(struc_size) = start_valObj(struc_size) + block_size;
 }
 
 
-int objPosition(our_block obj)
-{
-	
-	if (DS_size == 0)
+int objPosition(my_block obj){
+
+	if (struc_size == 0){ return 1; }
+
+	if (obj.start >= end_valObj(struc_size) || obj.start < 0 || obj.end < 0)
+	{ return -1; }
+
+	if (obj.end < start_valObj(1))
+	{ return 1; }
+
+	int x = 1, s_size = struc_size, tmp;
+	while ((s_size - x) > 1)
 	{
-		#ifdef DEBUG
-			printf("    Size = 0.\n");
-		#endif		
-		return 1;
-	}
-	if (obj.start >= DSF(DS_size) || obj.start < 0 || obj.end < 0)
-	{
-		#ifdef DEBUG
-			printf("    Memory out of bounds.\n");
-		#endif	
-		return -1;
-	}
-	if (obj.end < DSI(1))
-	{
-		#ifdef DEBUG
-			printf("    Pos = 1.\n");
-		#endif	
-		return 1;
-	}
-	int l = 1, r = DS_size, m;
-	while ((r-l) > 1)
-	{
-		m = (l+r)/2;
-		if (obj.start < DSI(m)) 
+		tmp = (x + s_size)/2;
+		if (obj.start < start_valObj(tmp))
 		{
-			r = m;
+			s_size = tmp;
 		}
-		else 
+		else
 		{
-			l = m;
+			x = tmp;
 		}
 	}
-	
-	return r;
+
+	return s_size;
 }
 
-our_block findInObj(int offset)
-{
-	#ifdef DEBUG
-		printf("    &&& Serching offset: %d.\n", offset);
-	#endif
-	if (DSI(1) <= offset && offset < DSF(1))
+my_block findInObj(int offset){
+
+	if (start_valObj(1) <= offset && offset < end_valObj(1))
 	{
-		#ifdef DEBUG
-			printf("    &&& Offset in first allocation\n");
-		#endif
-		return DS(1);
+		return structure(1);
 	}
-	int l = 1, r = DS_size, m;
-	while ((r-l) > 1)
+
+	int x = 1, s_size = struc_size, tmp;
+	while ((s_size - x) > 1)
 	{
-		m = (l+r)/2;
-		if (DSI(m) <= offset && offset < DSF(m)) 
+		tmp = (x + s_size)/2;
+		if (start_valObj(tmp) <= offset && offset < end_valObj(tmp))
 		{
-			#ifdef DEBUG
-				printf("    Offset at Interval #%d.\n", m);
-			#endif
-			return DS(m);
+			return structure(tmp);
 		}
-		else if (offset < DSI(m)) 
+		else if (offset < start_valObj(tmp))
 		{
-			r = m;
+			s_size = tmp;
 		}
-		else 
+		else
 		{
-			l = m;
+			x = tmp;
 		}
 	}
-	#ifdef DEBUG
-		printf("    Offset not in Interval.\n");
-	#endif
-	our_block I;
-	I.initial = -1;
-	I.final = -1;
-	return I;
+
+	my_block obj;
+	obj.start = -1;
+	obj.end = -1;
+
+	return obj;
 }
 
 
@@ -186,7 +157,7 @@ our_block findInObj(int offset)
 int Mem_Init(int size, int policy) {
 
   	int fd;
-	if (not_initalized) 
+	if (not_initalized)
 	{
 		int pa_size = getpagesize();
 		int roundUP_size = size + pa_size - size%pa_size;
@@ -197,47 +168,173 @@ int Mem_Init(int size, int policy) {
 		/* Creates the memory file with read, write and execute permissions
 		 * set for the current user */
 		fd = open("/dev/zero", O_RDWR);
-		if (fd == -1)
-		{
-			return FAIL;
-		}
- 
-		ptr = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
+		if (fd == -1){ return FAIL; }
 
-		if (ptr == MAP_FAILED) 
-		{
-			return EXIT_ERROR;
-		}
+		map = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
+
+		if (map == MAP_FAILED){ return FAIL; }
 
 		not_initalized = FALSE;
 		global_policy = policy;
 
-		our_block obj;
+		my_block obj;
 		obj.start =  mem_size; /* insertion will adjust it */
 		obj.end = mem_size;
-		objInsert(I);
-
-		#ifdef DEBUG
-			print_DS();
-		#endif
+		objInsert(obj);
 	}
-	else 
+	else
 	{
-		#ifdef DEBUG
-			printf("Mem already initialized.\n");
-		#endif
-		return EXIT_ERROR;
+		return FAIL;
 	}
 
 	close(fd);
-	#ifdef DEBUG
-		printf("*** Success, memory initialized.\n\n");
-	#endif
-	return EXIT_SUCCESS;
+	return PASS;
 }
 
 void* Mem_Alloc(int size){
- 
+
+  void *ptr = map;
+  my_block obj;
+  obj.start = 0;
+  if (global_policy == MEM_POLICY_FIRSTFIT)
+  {
+    if (struc_size == 1 && size <= (start_valObj(1) - block_size))
+    {
+      obj.end = obj.start + size;
+
+      objInsert(obj);
+      return ptr + 0;
+    }
+    else if (struc_size > 1)
+    {
+      if (size <= start_valObj(1))
+      {
+        obj.end = obj.start + size;
+
+        objInsert(obj);
+        return ptr + 0;
+      }
+      for (int i = 1; i < struc_size; ++i)
+      {
+        if (i == (struc_size - 1))
+        {
+          if(size <= (start_valObj((i+1)) - end_valObj(i) - block_size))
+          {
+            obj.start = end_valObj(i);
+            obj.end = obj.start + size;
+
+            objInsert(obj);
+            return ptr + end_valObj(i);
+          }
+        }
+        else if(size <= (start_valObj((i+1)) - end_valObj(i)))
+        {
+          obj.start = end_valObj(i);
+          obj.end = obj.start + size;
+
+          objInsert(obj);
+          return ptr + end_valObj(i);
+        }
+      }
+    }
+    return NULL;
+  }
+  else if(global_policy == MEM_POLICY_BESTFIT)
+  {
+    int i, best_fit = mem_size, best_position = -1;
+    if (size <= (start_valObj(1)))
+    {
+      best_fit = start(1);
+      best_position = 0;
+
+    }
+    for (i = 1; i < struc_size; ++i)
+    {
+      if (i == (struc_size - 1))
+      {
+        if(size <= (start_valObj((i+1)) - start_valObj(i) - block_size)
+            && (start_valObj((i+1)) - start_valObj(i)) < best_fit)
+        {
+          best_fit = (start_valObj((i+1)) - start_valObj(i));
+          best_position = i;
+        }
+      }
+      else
+      {
+        if(size <= (start_valObj((i+1)) - start_valObj(i)) && (start_valObj((i+1)) - start_valObj(i)) < best_fit)
+        {
+          best_fit = (start_valObj((i+1)) - end_valObj(i));
+          best_position = i;
+        }
+      }
+    }
+    if (best_position == 0)
+    {
+      obj.end = obj.start + size;
+      objInsert(obj);
+      return ptr + 0;
+    }
+    else if (best_position != -1)
+    {
+      obj.start = end_valObj(best_position);
+      obj.end = obj.start + size;
+
+      objInsert(obj);
+      return ptr + end_valObj(best_position);
+    }
+    return NULL;
+  }
+  else if (global_policy == MEM_POLICY_WORSTFIT)
+  {
+    int i, worst_fit = 0, worst_position = -1;
+    if (size <= (start_valObj(1)))
+    {
+      worst_fit = start_valObj(1);
+      worst_position = 0;
+
+    }
+    for (i = 1; i < struc_size; ++i)
+    {
+      if (i == (struc_size - 1))
+      {
+        if(size <= (start_valObj((i+1)) - end_valObj(i) - block_size)
+            && (start_valObj((i+1)) - end_valObj(i)) > worst_fit)
+        {
+          worst_fit = (start_valObj((i+1)) - end_valObj(i));
+          worst_position = i;
+        }
+      }
+      else
+      {
+        if(size <= (start_valObj((i+1)) - end_valObj(i)) && (start_valObj((i+1)) - end_valObj(i)) > worst_fit)
+        {
+          worst_fit = (start_valObj((i+1)) - end_valObj(i));
+          worst_position = i;
+        }
+      }
+    }
+    if (worst_position == 0)
+    {
+      obj.end = obj.start + size;
+      objInsert(obj);
+
+      return ptr + 0;
+    }
+    else if (worst_position != -1)
+    {
+      obj.start = end_valObj(worst_position);
+      obj.end = obj.start + size;
+
+      objInsert(obj);
+      return ptr + end_valObj(worst_position);
+    }
+    return NULL;
+  }
+  else
+  {
+    return (void*) FAIL;
+  }
+  return NULL;
 }
 
 int Mem_Free(void* ptr){
@@ -255,4 +352,3 @@ int Mem_GetSize(void* ptr){
 float Mem_GetFragmentation(){
 
 }
-

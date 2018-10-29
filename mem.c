@@ -14,31 +14,32 @@
 #define E_BAD_ARGS            (4)
 #define E_BAD_POINTER         (5)
 
-struct mem_node* consolidateBefore(struct mem_node *newNode);
-struct mem_node* consolidateAfter(struct mem_node *newNode);
+struct our_block* addNode_prev(struct our_block *newNode);
+struct our_block* addNode_next(struct our_block *newNode);
 
-struct mem_node {
-	struct mem_node *next;
-	struct mem_node *prev;
+struct our_block {
+	struct our_block *next;
+	struct our_block *prev;
 	int	  size;
 };
 
-struct mem_node *freeHead = NULL;
+struct our_block *emptyNode = NULL;
 int freeSize = 0;
 int m_error;
+int global_policy;
 
-int Mem_Init(int sizeOfRegion, int debug)
+int Mem_Init(int size, int policy)
 {
-	if(sizeOfRegion > 0 && freeHead == NULL )
+	if(size > 0 && emptyNode == NULL )
 	{
 		int pageSize = getpagesize();
-		if(sizeOfRegion % getpagesize() != 0)
-			sizeOfRegion += getpagesize() - (sizeOfRegion % getpagesize());
+		if(size % getpagesize() != 0)
+			size += getpagesize() - (size % getpagesize());
 		
 
 		int fd = open("/dev/zero", O_RDWR);
 
-		void* ptr = mmap(NULL, sizeOfRegion, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
+		void* ptr = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
 		if (ptr == MAP_FAILED) { perror("mmap"); exit(1); }
 		close(fd);
 
@@ -46,30 +47,33 @@ int Mem_Init(int sizeOfRegion, int debug)
 		if((uintptr_t)ptr  % 8 != 0)
 		{
 			ptr += 8 - ((uintptr_t)ptr % 8);
-			sizeOfRegion -= 8 - ((uintptr_t)ptr % 8);
+			size -= 8 - ((uintptr_t)ptr % 8);
 		}
-		freeHead = ptr;
-		freeHead->next = NULL;
-		freeHead->prev = NULL;
-		freeHead->size = sizeOfRegion;
+		emptyNode = ptr;
+		emptyNode->next = NULL;
+		emptyNode->prev = NULL;
+		emptyNode->size = size;
+		global_policy = policy;
 
-		freeSize = sizeOfRegion;
+		freeSize = size;
 		return 0;
 	}else {
 		m_error = E_BAD_ARGS;
 		return -1;
 	}
+
+	
 }
 
 void *Mem_Alloc(int size)
 {
-	struct mem_node *biggestNode  = freeHead;
-	struct mem_node *currentNode  = freeHead;
+	struct our_block *biggestNode  = emptyNode;
+	struct our_block *currentNode  = emptyNode;
 
 	if(size % 8 != 0)
 		size += 8 - (size % 8);
 
-	if(freeHead == NULL)
+	if(emptyNode == NULL)
 	{
 		//our list is empty
 		m_error = E_NO_SPACE;
@@ -84,8 +88,8 @@ void *Mem_Alloc(int size)
 		currentNode = currentNode->next;
 	}while(currentNode != NULL);
 
-	struct mem_node* biggestNodePrev = biggestNode->prev;
-	struct mem_node* biggestNodeNext = biggestNode->next;
+	struct our_block* biggestNodePrev = biggestNode->prev;
+	struct our_block* biggestNodeNext = biggestNode->next;
 	int biggestNodeSize = biggestNode->size;
 
 	//check for freespace
@@ -94,7 +98,7 @@ void *Mem_Alloc(int size)
 		m_error = E_NO_SPACE;
 		return NULL;
 	}else if(biggestNode->size == size + 24) {
-		if(biggestNode != freeHead)
+		if(biggestNode != emptyNode)
 		{
 			biggestNode->prev->next = biggestNodeNext;
 		}
@@ -102,9 +106,9 @@ void *Mem_Alloc(int size)
 		{
 			biggestNode->next->prev = biggestNodePrev;
 		}
-		if(biggestNode == freeHead)
+		if(biggestNode == emptyNode)
 		{
-			freeHead = biggestNodeNext;
+			emptyNode = biggestNodeNext;
 		}
 
 		uintptr_t *new_size = (uintptr_t*)biggestNode;
@@ -115,13 +119,13 @@ void *Mem_Alloc(int size)
 		uintptr_t *new_size = (uintptr_t*)biggestNode;
 		returnVal =  (void*)new_size + 24;
 
-		struct mem_node* newNode = returnVal + size;
+		struct our_block* newNode = returnVal + size;
 		
 		newNode->prev = biggestNodePrev;
 		newNode->next = biggestNodeNext;
 		newNode->size = biggestNodeSize - (size + 24);
 
-		if(biggestNode != freeHead)
+		if(biggestNode != emptyNode)
 		{
 			biggestNode->prev->next = newNode;
 		}
@@ -129,27 +133,25 @@ void *Mem_Alloc(int size)
 		{
 			biggestNode->next->prev = newNode;
 		}
-		if(biggestNode == freeHead)
+		if(biggestNode == emptyNode)
 		{
-			freeHead = newNode;
+			emptyNode = newNode;
 		}
 
 		*new_size = size;
 		return returnVal;
 	}
 
-
 }
 
 int Mem_Free(void *ptr)
 {
-	if(ptr == NULL)
-		return 0;
+	if(ptr == NULL) { return -1; }
 	
 	int *size = ptr - 24;
 
-	struct mem_node *beforeNode = freeHead;
-	struct mem_node *newNode = (struct mem_node*)size;
+	struct our_block *beforeNode = emptyNode;
+	struct our_block *newNode = (struct our_block*)size;
 
 	if(beforeNode == NULL)
 	{
@@ -158,17 +160,17 @@ int Mem_Free(void *ptr)
 		newNode->size = *size + 24;
 		newNode->prev = NULL;
 		newNode->next = NULL;
-		freeHead = newNode;
+		emptyNode = newNode;
 		return 0;
-	}else if((uintptr_t*)size < (uintptr_t*)freeHead)
+	}else if((uintptr_t*)size < (uintptr_t*)emptyNode)
 	{
 		//Freed memory at beginning of list
 
 		newNode->size = *size + 24;
 		newNode->prev = NULL;
-		newNode->next = freeHead;
-		freeHead->prev = newNode;
-		freeHead = newNode;
+		newNode->next = emptyNode;
+		emptyNode->prev = newNode;
+		emptyNode = newNode;
 	}else {
 
 		while((void*)beforeNode->next < (void*)size && beforeNode->next != NULL)
@@ -176,7 +178,7 @@ int Mem_Free(void *ptr)
 			beforeNode = beforeNode->next;
 		}
 
-		if (beforeNode == freeHead)
+		if (beforeNode == emptyNode)
 		{
 			newNode->size = *size + 24;
 			newNode->prev = beforeNode;
@@ -192,7 +194,7 @@ int Mem_Free(void *ptr)
 			newNode->next = beforeNode->next;
 			beforeNode->next = newNode;
 		}
-		else if(beforeNode != freeHead)
+		else if(beforeNode != emptyNode)
 		{
 			newNode->size = *size + 24;
 			newNode->prev = beforeNode;
@@ -202,18 +204,26 @@ int Mem_Free(void *ptr)
 		}
 	}
 
-	consolidateAfter(consolidateBefore(newNode));
+	addNode_next(addNode_prev(newNode));
 	return 0;
 }
 
+int Mem_IsValid(void* ptr){
+	return 1;
+}
+
+int Mem_GetSize(void* ptr){
+	return -1;
+}
+
 float Mem_GetFragmentation(){
-  return 1.0;
+	return 1.0;
 }
 
 
-struct mem_node* consolidateBefore(struct mem_node *newNode)
+struct our_block* addNode_prev(struct our_block *newNode)
 {
-	struct mem_node *prevNode = newNode->prev;
+	struct our_block *prevNode = newNode->prev;
 	if(prevNode != NULL)
 	{
 		if(((void*)prevNode + prevNode->size) == newNode)
@@ -227,9 +237,9 @@ struct mem_node* consolidateBefore(struct mem_node *newNode)
 	return newNode;
 }
 
-struct mem_node* consolidateAfter(struct mem_node *newNode)
+struct our_block* addNode_next(struct our_block *newNode)
 {
-	struct mem_node *nextNode = newNode->next;
+	struct our_block *nextNode = newNode->next;
 	if(nextNode != NULL)
 	{
 		if(((void*)newNode + newNode->size) == nextNode)
@@ -242,13 +252,4 @@ struct mem_node* consolidateAfter(struct mem_node *newNode)
 		}
 	}
 	return newNode;
-}
-
-void Mem_Dump(){
-	struct mem_node *nextNode = freeHead;
-	while(nextNode != NULL)
-	{
-		printf("Node at: %p\n\tPrevious: %p\n\tNext: %p\n\tSize: %d\n", nextNode, nextNode->prev, nextNode->next, nextNode->size);
-		nextNode = nextNode->next;
-	}
 }

@@ -17,7 +17,6 @@ so add some define like we did yesterday
 
 #define FIRST-FIT 100
 #define BEST-FIT 111
-#define BEST-FIT 111
-#define WORST-FIT 
+#define WORST-FIT 112
 
 and use these constants inside Mem_Alloc

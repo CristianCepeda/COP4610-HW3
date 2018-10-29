@@ -8,6 +8,16 @@
 #include <fcntl.h>
 #include <stdint.h>
 
+// Global Variables *****************
+#define FIRST_FIT 100
+#define BEST_FIT 111
+#define WORST_FIT 112
+
+struct mem_node *freeHead = NULL;
+int freeSize = 0;
+int m_error;
+
+
 // defining the protypes *****************
 struct mem_node* consolidateBefore(struct mem_node *newNode);
 struct mem_node* consolidateAfter(struct mem_node *newNode);
@@ -16,16 +26,12 @@ struct mem_node* consolidateAfter(struct mem_node *newNode);
 struct mem_node {
 	struct mem_node *next;
 	struct mem_node *prev;
-	int	  size;
+	int	size;
+	int policy; // ************************ ADDED THIS TO THE CODE ************************
 };
 
- // Global Variables *****************
-struct mem_node *freeHead = NULL;
-int freeSize = 0;
-int m_error;
-
-int main()
-{
+// I THINK YOU SHOULD DELETE THIS MAIN METHOD SINCE IT ISNT BEENING USED BY AYTHING. 
+int main() {
 	return 0;
 }
 
@@ -64,8 +70,9 @@ int Mem_Init(int sizeOfRegion, int debug)
 		freeHead->next = NULL;
 		freeHead->prev = NULL;
 		freeHead->size = sizeOfRegion;
+		freeHead->policy = policy;
 
-		freeSize = sizeOfRegion;
+		freeSize = sizeOfRegion; // CAN YOU SEE WHERE ELSE THEY USE THIS freeSize variable becasue i dont see how he is using it in any of his code besides here and the global variable. 
 		return 0;
 	}else {
 		m_error = E_BAD_ARGS;
@@ -86,6 +93,15 @@ void *Mem_Alloc(int size)
 		//our list is empty
 		m_error = E_NO_SPACE;
 		return NULL;
+	}
+
+// ************************ ADDED THIS TO THE CODE ************************
+	if(freeHead->policy == FIRST_FIT){
+		// EXECUTE CODE FOR FIRST FIT
+	} else if (freeHead->policy == BEST_FIT){
+		// EXECUTE CODE FOR BEST FIT
+	} else {
+		// EXECUTE CODE FOR WORST FIT
 	}
 
 	//find the biggest free chunk (worst fit)

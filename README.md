@@ -23,5 +23,15 @@ Option 2
 
 Step 1
 ```
-./myprogram
+Before you run "./myprogram"
+​You will need to set the environment variable,
+LD_LIBRARY_PATH, so that the system can find your library at run-time. Assuming you always
+run myprogram from this same directory, you can use the command:
+
+setenv LD_LIBRARY_PATH ${LD_LIBRARY_PATH}:.
+```
+
+Step 2
+```
+./myprogram 
 ```

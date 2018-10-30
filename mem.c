@@ -73,7 +73,6 @@ void *Mem_Alloc(int size)
 		return NULL;	//empty list
 	}
 
-	//find the biggest free chunk (worst fit)
 	do{
 		if(currentNode->size > maxNode->size)
 			maxNode = currentNode;
@@ -85,7 +84,6 @@ void *Mem_Alloc(int size)
 	struct our_block* maxNodeNext = maxNode->next;
 	int maxNodeSize = maxNode->size;
 
-	//check for freespace
 	if(maxNode->size < size + 24)
 	{
 		return NULL;
@@ -147,7 +145,6 @@ int Mem_Free(void *ptr)
 
 	if((uintptr_t*)size < (uintptr_t*)emptyNode)
 	{
-		//Freed memory at beginning of list
 		newNode->size = *size + 24;
 		newNode->prev = NULL;
 		newNode->next = emptyNode;
@@ -163,7 +160,6 @@ int Mem_Free(void *ptr)
 
 		if (beforeNode == emptyNode)
 		{
-			//printf("BeforeNode: %p EmptyNode: %p\n", (void*)beforeNode, (void*)emptyNode);
 			newNode->size = *size + 24;
 			newNode->prev = beforeNode;
 			newNode->next = beforeNode->next;
@@ -198,7 +194,7 @@ float Mem_GetFragmentation(){
 	struct our_block *current = emptyNode;
 	double maxFree = 0.0;
 	double totalFree = 0.0;
-	
+
 	while (current != NULL){
 		if(current->size > maxFree){ maxFree = current->size; }
 
